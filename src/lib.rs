@@ -54,6 +54,7 @@ impl Space {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 pub struct Mapping {
     input: Vec<f64>,
     output: Vec<f64>,
@@ -81,12 +82,17 @@ impl Mapping {
 }
 
 #[derive(Debug)]
+pub enum IntermapFunction {
+    Nearest,
+    InverseDistance{ power: f64, range: Option<f64> },
+}
+
+#[derive(Debug)]
 pub struct Conversion {
     input: Space,
     output: Space,
     mappings: Vec<Mapping>,
-    inverse_distance_power: f64,
-    ignore_range: Option<f64>,
+    intermap_function: IntermapFunction,
 }
 
 impl Conversion {
@@ -95,13 +101,12 @@ impl Conversion {
             input,
             output,
             mappings: Vec::new(),
-            inverse_distance_power: 2.0,
-            ignore_range: None,
+            intermap_function: IntermapFunction::InverseDistance{ power: 2.0, range: None},
         };
         conv
     }
-    pub fn with_inverse_distance_power(mut self, idp: f64) -> Conversion {
-        self.inverse_distance_power = idp;
+    pub fn with_itermap_function(mut self, imf: IntermapFunction) -> Conversion {
+        self.intermap_function = imf;
         self
     }
     pub fn add_mapping(&mut self, m: Mapping) {
@@ -131,31 +136,49 @@ impl Conversion {
         self.mappings.push(Mapping::new().with_points(inpoint, outpoint));
     }
     pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
-        let mut vector_sum: Vec<f64> = vec![0.0;self.output.order()];
-        let mut denom_sum = 0.0;
-        for m in self.mappings.iter() {
-            let dist = dist64(&m.input, &in_value);
-            if dist == 0.0 {
-                let result = m.output.clone();
-                return Some(result);
-            }
-            let weight_dist = m.weight * (1.0 / dist).powf(self.inverse_distance_power);
-            let mut in_range = true;
-            if let Some(ir) = self.ignore_range {
-                if dist > ir {
-                    in_range = false;
+        match self.intermap_function {
+            IntermapFunction::InverseDistance{power, range} => {
+                let mut vector_sum: Vec<f64> = vec![0.0;self.output.order()];
+                let mut denom_sum = 0.0;
+                for m in self.mappings.iter() {
+                    let dist = dist64(&m.input, &in_value);
+                    if dist == 0.0 {
+                        let result = m.output.clone();
+                        return Some(result);
+                    }
+                    let weight_dist = m.weight * (1.0 / dist).powf(power);
+                    let mut in_range = true;
+                    if let Some(r) = range {
+                        if dist > r {
+                            in_range = false;
+                        }
+                    }
+                    if in_range {
+                        vector_sum = vector_add(&vector_sum, &vector_multiply(&m.output, &weight_dist));
+                        denom_sum += weight_dist;
+                    }
                 }
+                if denom_sum == 0.0 {
+                    return None;
+                }
+                let result = vector_multiply(&vector_sum, &(1.0/denom_sum));
+                Some(result)
             }
-            if in_range {
-                vector_sum = vector_add(&vector_sum, &vector_multiply(&m.output, &weight_dist));
-                denom_sum += weight_dist;
+            IntermapFunction::Nearest => {
+                let mut min_dist_mapping = (
+                    dist64(&self.mappings[0].input, &in_value),
+                    self.mappings[0].clone(),
+                );
+                for m in self.mappings.iter() {
+                    let dist = dist64(&m.input, &in_value);
+                    if dist < min_dist_mapping.0 {
+                        min_dist_mapping = (dist, m.clone());
+                    }
+                }
+                Some(min_dist_mapping.1.output)
             }
         }
-        if denom_sum == 0.0 {
-            return None;
-        }
-        let result = vector_multiply(&vector_sum, &(1.0/denom_sum));
-        Some(result)
+
     }
 }
 
