@@ -33,6 +33,7 @@ fn dist64(a: &Vec<f64>, b: &Vec<f64>) -> f64 {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 pub struct Space {
     bounds: Vec<(f64, f64)>,
 }
@@ -82,12 +83,15 @@ impl Mapping {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 pub enum IntermapFunction {
     Nearest,
     InverseDistance{ power: f64, range: Option<f64> },
+    AverageInRange(f64),
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 pub struct Conversion {
     input: Space,
     output: Space,
@@ -176,6 +180,30 @@ impl Conversion {
                     }
                 }
                 Some(min_dist_mapping.1.output)
+            }
+            IntermapFunction::AverageInRange(range) => {
+                let mut vector_sum: Vec<f64> = vec![0.0;self.output.order()];
+                let mut count = 0.0;
+                for m in self.mappings.iter() {
+                    let dist = dist64(&m.input, &in_value);
+                    if dist == 0.0 {
+                        let result = m.output.clone();
+                        return Some(result);
+                    }
+                    let mut in_range = true;
+                    if dist > range {
+                        in_range = false;
+                    }
+                    if in_range {
+                        vector_sum = vector_add(&vector_sum, &m.output);
+                        count += 1.0;
+                    }
+                }
+                if count == 0.0 {
+                    return None;
+                }
+                let result = vector_multiply(&vector_sum, &(1.0/count));
+                Some(result)
             }
         }
 
