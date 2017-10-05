@@ -2,6 +2,13 @@ extern crate rand;
 
 use rand::Rng;
 
+fn max(a: f64, b: f64) -> f64 {
+    if a < b {
+        return b;
+    }
+    a
+}
+
 fn vector_add(a: &Vec<f64>, b: &Vec<f64>) -> Vec<f64> {
     if a.len() != b.len() {
         panic!("The Vecs' length must be equal for them to be added!");
@@ -88,6 +95,7 @@ pub enum IntermapFunction {
     Nearest,
     InverseDistance{ power: f64, range: Option<f64> },
     AverageInRange(f64),
+    AverageInCone(f64),
 }
 
 #[derive(Debug)]
@@ -195,8 +203,33 @@ impl Conversion {
                         in_range = false;
                     }
                     if in_range {
-                        vector_sum = vector_add(&vector_sum, &m.output);
-                        count += 1.0;
+                        vector_sum = vector_add(&vector_sum, &vector_multiply(&m.output, &m.weight));
+                        count += m.weight;
+                    }
+                }
+                if count == 0.0 {
+                    return None;
+                }
+                let result = vector_multiply(&vector_sum, &(1.0/count));
+                Some(result)
+            }
+            IntermapFunction::AverageInCone(range) => {
+                let mut vector_sum: Vec<f64> = vec![0.0;self.output.order()];
+                let mut count = 0.0;
+                for m in self.mappings.iter() {
+                    let dist = dist64(&m.input, &in_value);
+                    if dist == 0.0 {
+                        let result = m.output.clone();
+                        return Some(result);
+                    }
+                    let mut in_range = true;
+                    if dist > range {
+                        in_range = false;
+                    }
+                    if in_range {
+                        let multiplier = m.weight*max(0.0, (range - dist)/range);
+                        vector_sum = vector_add(&vector_sum, &vector_multiply(&m.output, &multiplier));
+                        count += multiplier;
                     }
                 }
                 if count == 0.0 {
