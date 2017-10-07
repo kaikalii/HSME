@@ -1,14 +1,22 @@
 extern crate rand;
 
 use rand::Rng;
+use std::cmp;
 
-fn max(a: f64, b: f64) -> f64 {
+// Utility
+
+// Resturns the max of two numbers (of any type)
+// Why this is not std::cmp by default is beyond me.
+fn max<T>(a: T, b: T) -> T
+    where T: cmp::PartialOrd
+{
     if a < b {
         return b;
     }
     a
 }
 
+// Adds two vectors and returns their sum
 fn vector_add(a: &Vec<f64>, b: &Vec<f64>) -> Vec<f64> {
     if a.len() != b.len() {
         panic!("The Vecs' length must be equal for them to be added!");
@@ -20,6 +28,7 @@ fn vector_add(a: &Vec<f64>, b: &Vec<f64>) -> Vec<f64> {
     result
 }
 
+// Multiplies each element in a vector by a constant and returns the product vector
 fn vector_multiply(v: &Vec<f64>, c: &f64) -> Vec<f64> {
     let mut result: Vec<f64> = Vec::new();
     for i in v.iter() {
@@ -28,6 +37,7 @@ fn vector_multiply(v: &Vec<f64>, c: &f64) -> Vec<f64> {
     result
 }
 
+// Returns the euclidean distance between two Vec<64>s
 fn dist64(a: &Vec<f64>, b: &Vec<f64>) -> f64 {
     if a.len() != b.len() {
         panic!("The Vecs' length must be equal to find their distance!");
@@ -39,6 +49,10 @@ fn dist64(a: &Vec<f64>, b: &Vec<f64>) -> f64 {
     sum.powf(0.5)
 }
 
+// Space
+
+// A simply struct that defines the acceptable bounds of a space of an arbitrary numbers of dimensions
+
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct Space {
@@ -46,20 +60,28 @@ pub struct Space {
 }
 
 impl Space {
+
+    // Creates a new Space with empty bounds
     pub fn new() -> Space {
         let s = Space {
             bounds: Vec::new(),
         };
         s
     }
+    // Consumes a space and sets its bounds
     pub fn with_bounds(mut self, bounds: Vec<(f64, f64)>) -> Space {
         self.bounds = bounds;
         self
     }
+    // Returns the number of dimensions of the space
     pub fn order(&self) -> usize {
         self.bounds.len()
     }
 }
+
+// Mapping
+
+// A struct for defining a mapping of a point in space A to a point in space B. Spaces A and B may or may not have the same number of dimensions. The mapping has a weight that is used for conversion calculations
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -70,6 +92,7 @@ pub struct Mapping {
 }
 
 impl Mapping {
+    // Create a new empty mapping with half weight
     pub fn new() -> Mapping {
         let map = Mapping {
             input: Vec::new(),
@@ -78,25 +101,40 @@ impl Mapping {
         };
         map
     }
+    // Consume a mapping and set its points
     pub fn with_points(mut self, input: Vec<f64>, output: Vec<f64>) -> Mapping {
         self.input = input;
         self.output = output;
         self
     }
+    // Consume a mapping and set its weight
     pub fn with_weight(mut self, weight: f64) -> Mapping {
         self.weight = weight;
         self
     }
 }
 
+// IntermapFunction
+
+// An enum for defining an intermap function - a function that determines the way the output of a conversion is calculated when the input is not among the inputs of the conversion's mappings
+
 #[derive(Debug)]
 #[derive(Clone)]
+// These functions map unkown inputs to the output of ...
 pub enum IntermapFunction {
+    // ... the nearest known input
     Nearest,
+    // ... the sum of the outputs weighted by the inverse of their inputs' distance to the input in question. The inverse is raised to some power (2 or 3 seems to work best), and only inputs within some optional range are considered (lowering the range can help with performance).
     InverseDistance{ power: f64, range: Option<f64> },
+    // ... the average of all outputs whose inputs are within some range
     AverageInRange(f64),
+    // ... the average of all outputs whose inputs are within some range, weighted linearly by distance within that range.
     AverageInCone(f64),
 }
+
+// Conversion
+
+// A struct that defines a conversion between two spaces. It is essentially a collection of mappings, all of who's inputs and outputs fall within the bounds of the conversion's spaces. The conversion can evaluate arbitrary inputs for their output based on the conversion's mappings and its intermap function.
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -108,6 +146,7 @@ pub struct Conversion {
 }
 
 impl Conversion {
+    // Creates a new conversion from input and output spaces
     pub fn from_io(input: Space, output: Space) -> Conversion {
         let conv = Conversion {
             input,
@@ -117,10 +156,12 @@ impl Conversion {
         };
         conv
     }
+    // Consumes a conversion and sets its intermap function
     pub fn with_itermap_function(mut self, imf: IntermapFunction) -> Conversion {
         self.intermap_function = imf;
         self
     }
+    // Adds a user-defined mapping to the conevrsion
     pub fn add_mapping(&mut self, m: Mapping) {
         if m.input.len() != self.input.order() {
             panic!("The mapping's input size is not equal to the conversion's input size!");
@@ -130,6 +171,7 @@ impl Conversion {
         }
         self.mappings.push(m);
     }
+    // Adds a random mapping to the conversion. This mapping will have points that fall within the conversion's space's bounds.
     pub fn add_random_mapping(&mut self) {
         let mut inpoint: Vec<f64> = Vec::new();
         let mut outpoint: Vec<f64> = Vec::new();
@@ -147,6 +189,7 @@ impl Conversion {
 
         self.mappings.push(Mapping::new().with_points(inpoint, outpoint));
     }
+    // Evaluates an inputs vector and returns the output based on the conversion's mappings and its intermap function.
     pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
         match self.intermap_function {
             IntermapFunction::InverseDistance{power, range} => {
@@ -244,7 +287,7 @@ impl Conversion {
 }
 
 
-
+// Tests
 
 #[cfg(test)]
 mod tests {
