@@ -146,19 +146,36 @@ pub struct Conversion {
 }
 
 impl Conversion {
-    // Creates a new conversion from input and output spaces
+    // Creates a new conversion from input and output spaces. The conversion is initialized with a single averaged mapping.
     pub fn from_io(input: Space, output: Space) -> Conversion {
-        let conv = Conversion {
+        let mut conv = Conversion {
             input,
             output,
             mappings: Vec::new(),
-            intermap_function: IntermapFunction::InverseDistance{ power: 2.0, range: None},
+            intermap_function: IntermapFunction::InverseDistance{power: 2.0, range: None}
         };
+        let mut inpoint: Vec<f64> = Vec::new();
+        for i in conv.input.bounds.iter() {
+            inpoint.push((i.0 + i.1)/2.0);
+        }
+        let mut outpoint: Vec<f64> = Vec::new();
+        for i in conv.output.bounds.iter() {
+            outpoint.push((i.0 + i.1)/2.0);
+        }
+        let avg_mapping = Mapping::new().with_points(inpoint, outpoint);
+        conv.mappings.push(avg_mapping);
         conv
     }
     // Consumes a conversion and sets its intermap function
     pub fn with_itermap_function(mut self, imf: IntermapFunction) -> Conversion {
         self.intermap_function = imf;
+        self
+    }
+    //
+    pub fn without_default_mapping(mut self) -> Conversion {
+        if self.mappings.len() == 1 {
+            self.mappings.pop();
+        }
         self
     }
     // Adds a user-defined mapping to the conevrsion
@@ -189,7 +206,7 @@ impl Conversion {
 
         self.mappings.push(Mapping::new().with_points(inpoint, outpoint));
     }
-    // Evaluates an inputs vector and returns the output based on the conversion's mappings and its intermap function.
+    // Evaluates an inputs vector and returns the optional output based on the conversion's mappings and its intermap function.
     pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
         match self.intermap_function {
             IntermapFunction::InverseDistance{power, range} => {
@@ -283,6 +300,35 @@ impl Conversion {
             }
         }
 
+    }
+}
+
+// Pipeline
+
+// A struct that defines a series of conversions.
+
+pub struct Pipeline {
+    conversions: Vec<Conversion>,
+}
+
+impl Pipeline {
+    pub fn from_io(input: Space, output: Space) -> Pipeline {
+        let pipe = Pipeline {
+            conversions: vec![Conversion::from_io(input, output)],
+        };
+        pipe
+    }
+    pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
+        let mut data = Some(in_value);
+        for i in self.conversions.iter() {
+            if let Some(d) = data {
+                data = i.convert(d);
+            }
+        }
+        data
+    }
+    fn mutate(&self) {
+        
     }
 }
 
