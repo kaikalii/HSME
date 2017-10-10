@@ -118,20 +118,6 @@ impl Mapping {
 
 // An enum for defining an intermap function - a function that determines the way the output of a conversion is calculated when the input is not among the inputs of the conversion's mappings
 
-#[derive(Debug)]
-#[derive(Clone)]
-// These functions map unkown inputs to the output of ...
-pub enum IntermapFunction {
-    // ... the nearest known input
-    Nearest,
-    // ... the sum of the outputs weighted by the inverse of their inputs' distance to the input in question. The inverse is raised to some power (2 or 3 seems to work best), and only inputs within some optional range are considered (lowering the range can help with performance).
-    InverseDistance{ power: f64, range: Option<f64> },
-    // ... the average of all outputs whose inputs are within some range
-    AverageInRange(f64),
-    // ... the average of all outputs whose inputs are within some range, weighted linearly by distance within that range.
-    AverageInCone(f64),
-}
-
 // Conversion
 
 // A struct that defines a conversion between two spaces. It is essentially a collection of mappings, all of who's inputs and outputs fall within the bounds of the conversion's spaces. The conversion can evaluate arbitrary inputs for their output based on the conversion's mappings and its intermap function.
@@ -142,7 +128,7 @@ pub struct Conversion {
     input: Space,
     output: Space,
     mappings: Vec<Mapping>,
-    intermap_function: IntermapFunction,
+    power: f64,
 }
 
 impl Conversion {
@@ -152,7 +138,7 @@ impl Conversion {
             input,
             output,
             mappings: Vec::new(),
-            intermap_function: IntermapFunction::InverseDistance{power: 2.0, range: None}
+            power: 2.0,
         };
         let mut inpoint: Vec<f64> = Vec::new();
         for i in conv.input.bounds.iter() {
@@ -166,12 +152,12 @@ impl Conversion {
         conv.mappings.push(avg_mapping);
         conv
     }
-    // Consumes a conversion and sets its intermap function
-    pub fn with_itermap_function(mut self, imf: IntermapFunction) -> Conversion {
-        self.intermap_function = imf;
+    // Sets the power
+    pub fn with_power(mut self, power: f64) -> Conversion {
+        self.power = power;
         self
     }
-    //
+    // Removes the default mapping
     pub fn without_default_mapping(mut self) -> Conversion {
         if self.mappings.len() == 1 {
             self.mappings.pop();
@@ -208,98 +194,28 @@ impl Conversion {
     }
     // Evaluates an inputs vector and returns the optional output based on the conversion's mappings and its intermap function.
     pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
-        match self.intermap_function {
-            IntermapFunction::InverseDistance{power, range} => {
-                let mut vector_sum: Vec<f64> = vec![0.0;self.output.order()];
-                let mut denom_sum = 0.0;
-                for m in self.mappings.iter() {
-                    let dist = dist64(&m.input, &in_value);
-                    if dist == 0.0 {
-                        let result = m.output.clone();
-                        return Some(result);
-                    }
-                    let weight_dist = m.weight * (1.0 / dist).powf(power);
-                    let mut in_range = true;
-                    if let Some(r) = range {
-                        if dist > r {
-                            in_range = false;
-                        }
-                    }
-                    if in_range {
-                        vector_sum = vector_add(&vector_sum, &vector_multiply(&m.output, &weight_dist));
-                        denom_sum += weight_dist;
-                    }
-                }
-                if denom_sum == 0.0 {
-                    return None;
-                }
-                let result = vector_multiply(&vector_sum, &(1.0/denom_sum));
-                Some(result)
+        // find the maximum distance
+        let mut max_dist = 0.0;
+        for i in self.mappings.iter() {
+            let dist = dist64(&in_value, &i.input);
+            if dist == 0.0 {
+                return Some(i.output.clone());
             }
-            IntermapFunction::Nearest => {
-                let mut min_dist_mapping = (
-                    dist64(&self.mappings[0].input, &in_value),
-                    self.mappings[0].clone(),
-                );
-                for m in self.mappings.iter() {
-                    let dist = dist64(&m.input, &in_value);
-                    if dist < min_dist_mapping.0 {
-                        min_dist_mapping = (dist, m.clone());
-                    }
-                }
-                Some(min_dist_mapping.1.output)
-            }
-            IntermapFunction::AverageInRange(range) => {
-                let mut vector_sum: Vec<f64> = vec![0.0;self.output.order()];
-                let mut count = 0.0;
-                for m in self.mappings.iter() {
-                    let dist = dist64(&m.input, &in_value);
-                    if dist == 0.0 {
-                        let result = m.output.clone();
-                        return Some(result);
-                    }
-                    let mut in_range = true;
-                    if dist > range {
-                        in_range = false;
-                    }
-                    if in_range {
-                        vector_sum = vector_add(&vector_sum, &vector_multiply(&m.output, &m.weight));
-                        count += m.weight;
-                    }
-                }
-                if count == 0.0 {
-                    return None;
-                }
-                let result = vector_multiply(&vector_sum, &(1.0/count));
-                Some(result)
-            }
-            IntermapFunction::AverageInCone(range) => {
-                let mut vector_sum: Vec<f64> = vec![0.0;self.output.order()];
-                let mut count = 0.0;
-                for m in self.mappings.iter() {
-                    let dist = dist64(&m.input, &in_value);
-                    if dist == 0.0 {
-                        let result = m.output.clone();
-                        return Some(result);
-                    }
-                    let mut in_range = true;
-                    if dist > range {
-                        in_range = false;
-                    }
-                    if in_range {
-                        let multiplier = m.weight*max(0.0, (range - dist)/range);
-                        vector_sum = vector_add(&vector_sum, &vector_multiply(&m.output, &multiplier));
-                        count += multiplier;
-                    }
-                }
-                if count == 0.0 {
-                    return None;
-                }
-                let result = vector_multiply(&vector_sum, &(1.0/count));
-                Some(result)
+            if dist > max_dist {
+                max_dist = dist;
             }
         }
-
+        // Evaluate the cone
+        let mut top_sum = vec![0.0; self.output.bounds.len()];
+        let mut bottom_sum = 0.0;
+        for i in self.mappings.iter() {
+            let dist = dist64(&in_value, &i.input);
+            let coef = ((max_dist - dist) * i.weight).powf(self.power);
+            top_sum = vector_add(&top_sum, &vector_multiply(&i.output, &coef));
+            bottom_sum += coef;
+        }
+        let result = vector_multiply(&top_sum, &(1.0/bottom_sum));
+        Some(result)
     }
 }
 
