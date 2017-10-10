@@ -305,19 +305,21 @@ impl Conversion {
 
 // Pipeline
 
-// A struct that defines a series of conversions.
+// A struct that defines a series of conversions. The order of conversion N's output always equals the order of conversion (N+1)'s input.
 
 pub struct Pipeline {
     conversions: Vec<Conversion>,
 }
 
 impl Pipeline {
+    // Contructs a Pipeline with a single Conversion which has only one mapping
     pub fn from_io(input: Space, output: Space) -> Pipeline {
         let pipe = Pipeline {
             conversions: vec![Conversion::from_io(input, output)],
         };
         pipe
     }
+    // Runs an input vector through every conversion and return the final output
     pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
         let mut data = Some(in_value);
         for i in self.conversions.iter() {
@@ -327,8 +329,50 @@ impl Pipeline {
         }
         data
     }
-    fn mutate(&self) {
-        
+    // Mutates by adding a random mapping in a random conversion
+    fn mutate_add_mapping(&mut self) {
+        let mut rng = rand::thread_rng();
+        let conv_index = rng.gen::<usize>() % self.conversions.len();
+        self.conversions[conv_index].add_random_mapping();
+    }
+    // Mutates by changing either the input or output of a random mapping in a random conversion
+    fn mutate_change_mapping(&mut self) {
+        let mut rng = rand::thread_rng();
+        let conv_index = rng.gen::<usize>() % self.conversions.len();
+        let mapping_index = rng.gen::<usize>() % self.conversions[conv_index].mappings.len();
+        let i_or_o = rng.gen::<usize>() % 2;
+        if i_or_o == 0 {
+            let mut new_vec: Vec<f64> = Vec::new();
+            for i in self.conversions[conv_index].input.bounds.iter() {
+                new_vec.push(rng.gen::<f64>() % (i.1 - i.0) + i.0);
+            }
+            self.conversions[conv_index].mappings[mapping_index].input = new_vec;
+        }
+        else {
+            let mut new_vec: Vec<f64> = Vec::new();
+            for i in self.conversions[conv_index].output.bounds.iter() {
+                new_vec.push(rng.gen::<f64>() % (i.1 - i.0) + i.0);
+            }
+            self.conversions[conv_index].mappings[mapping_index].output = new_vec;
+        }
+    }
+    // Chooses a random mutation type to execute based on some weights
+    pub fn mutate(&mut self) {
+        let add_mapping_part = 9;
+        let change_mapping_part = 1;
+        let total_parts = add_mapping_part + change_mapping_part;
+        let mut rng = rand::thread_rng();
+        let mutation_index = rng.gen::<usize>() % total_parts;
+        let mut index_sum = add_mapping_part;
+        if mutation_index < index_sum {
+            self.mutate_change_mapping();
+        }
+        else {
+            index_sum += change_mapping_part;
+            if mutation_index < index_sum {
+                self.mutate_add_mapping();
+            }
+        }
     }
 }
 
