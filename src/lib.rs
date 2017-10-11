@@ -5,9 +5,9 @@ use std::cmp;
 
 // Utility
 
-// Resturns the max of two numbers (of any type)
+// Returns the max of two numbers (of any type)
 // Why this is not std::cmp by default is beyond me.
-fn max<T>(a: T, b: T) -> T
+pub fn max<T>(a: T, b: T) -> T
     where T: cmp::PartialOrd
 {
     if a < b {
@@ -76,6 +76,10 @@ impl Space {
     // Returns the number of dimensions of the space
     pub fn order(&self) -> usize {
         self.bounds.len()
+    }
+    // Adds a new bound to the space
+    pub fn add_bound(&mut self, bound: (f64, f64)) {
+        self.bounds.push(bound);
     }
 }
 
@@ -182,12 +186,12 @@ impl Conversion {
 
         for &(min, max) in self.input.bounds.iter() {
             let range = max - min;
-            inpoint.push(rng.gen::<f64>() % range + min);
+            inpoint.push(rng.gen_range(0.0, range) + min);
         }
 
         for &(min, max) in self.output.bounds.iter() {
             let range = max - min;
-            outpoint.push(rng.gen::<f64>() % range + min);
+            outpoint.push(rng.gen_range(0.0, range) + min);
         }
 
         self.mappings.push(Mapping::new().with_points(inpoint, outpoint));
@@ -223,6 +227,8 @@ impl Conversion {
 
 // A struct that defines a series of conversions. The order of conversion N's output always equals the order of conversion (N+1)'s input.
 
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Pipeline {
     conversions: Vec<Conversion>,
 }
@@ -260,35 +266,136 @@ impl Pipeline {
         if i_or_o == 0 {
             let mut new_vec: Vec<f64> = Vec::new();
             for i in self.conversions[conv_index].input.bounds.iter() {
-                new_vec.push(rng.gen::<f64>() % (i.1 - i.0) + i.0);
+                let new_val = rng.gen_range(i.0, i.1);
+                new_vec.push(new_val);
             }
             self.conversions[conv_index].mappings[mapping_index].input = new_vec;
         }
         else {
             let mut new_vec: Vec<f64> = Vec::new();
             for i in self.conversions[conv_index].output.bounds.iter() {
-                new_vec.push(rng.gen::<f64>() % (i.1 - i.0) + i.0);
+                let new_val = rng.gen_range(i.0, i.1);
+                new_vec.push(new_val);
             }
             self.conversions[conv_index].mappings[mapping_index].output = new_vec;
         }
     }
-    // Chooses a random mutation type to execute based on some weights
-    pub fn mutate(&mut self) {
-        let add_mapping_part = 9;
-        let change_mapping_part = 1;
-        let total_parts = add_mapping_part + change_mapping_part;
+    // Mutates by changing the weight of a random mapping in a random conversion to a random number
+    fn mutate_change_weight(&mut self) {
         let mut rng = rand::thread_rng();
-        let mutation_index = rng.gen::<usize>() % total_parts;
-        let mut index_sum = add_mapping_part;
-        if mutation_index < index_sum {
-            self.mutate_change_mapping();
+        let conv_index = rng.gen::<usize>() % self.conversions.len();
+        let mapping_index = rng.gen::<usize>() % self.conversions[conv_index].mappings.len();
+        self.conversions[conv_index].mappings[mapping_index].weight = rng.gen::<f64>() % 1.0;
+    }
+    // Mutates by adding a new conversion at the end
+    fn mutate_add_conversion(&mut self) {
+        let ending_bounds: Vec<(f64, f64)>;
+        if let Some(last) = self.conversions.last() {
+            ending_bounds = last.output.bounds.clone();
         }
         else {
-            index_sum += change_mapping_part;
-            if mutation_index < index_sum {
-                self.mutate_add_mapping();
+            panic!("Tried to add an ending conversion to an empty pipeline");
+        }
+        let new_start_space = Space::new().with_bounds(ending_bounds.clone());
+        let new_end_space = Space::new().with_bounds(ending_bounds);
+        let mut conv = Conversion::from_io(new_start_space, new_end_space);
+        if let Some(last) = self.conversions.last() {
+            for m in last.mappings.iter() {
+                conv.add_mapping(Mapping::new().with_points(m.output.clone(), m.output.clone()));
             }
         }
+        self.conversions.push(conv);
+    }
+    // Mutates by adding a dimension to a space shared by two conversion
+    fn mutate_add_dimension(&mut self) -> bool {
+        if self.conversions.len() < 2 {
+            return false;
+        }
+        let mut rng = rand::thread_rng();
+        let mut dim_count_sum = 0.0;
+        for i in 0..(self.conversions.len() - 1) {
+            dim_count_sum += 1.0/(self.conversions[i].output.bounds.len() as f64);
+        }
+        let mut lower_index = 0;
+        let mut rnd = rng.gen_range(0.0, dim_count_sum);
+        for (i, n) in self.conversions.iter().enumerate() {
+            if rnd < 1.0/(n.output.bounds.len() as f64) {
+                lower_index = i;
+                break;
+            }
+            rnd -= 1.0/(n.output.bounds.len() as f64);
+        }
+        let mut new_bound = (0.0, 0.0);
+        for i in self.conversions[lower_index].output.bounds.iter() {
+            if i.0 < new_bound.0 {
+                new_bound.0 = i.0;
+            }
+            if i.1 > new_bound.1 {
+                new_bound.1 = i.1;
+            }
+        }
+        self.conversions[lower_index].output.add_bound(new_bound.clone());
+        self.conversions[lower_index + 1].input.add_bound(new_bound.clone());
+        let new_val = (new_bound.0 + new_bound.1) / 2.0;
+        for i in self.conversions[lower_index].mappings.iter_mut() {
+            i.output.push(new_val);
+        }
+        for i in self.conversions[lower_index + 1].mappings.iter_mut() {
+            i.input.push(new_val);
+        }
+        true
+    }
+    // Chooses a random mutation type to execute based on some weights
+    pub fn mutate(&mut self) {
+        let mutation_weights = vec![
+            10.0, // mutate_change_mapping
+            7.0, // mutate_change_weight
+            1.0, // mutate_add_mapping
+            0.4, // mutate_add_dimension
+            0.1, // mutate_add_conversion
+            ];
+        let mut weight_sum = 0.0;
+        for i in mutation_weights.iter() {
+            weight_sum += *i;
+        }
+        let mut rng = rand::thread_rng();
+        let mut chosen_index = rng.gen_range(0.0, weight_sum);
+        let mut choice = 0;
+        for (i, &n) in mutation_weights.iter().enumerate() {
+            if chosen_index < n {
+                choice = i;
+                break;
+            }
+            chosen_index -= n;
+        }
+        match choice {
+            0 => self.mutate_change_mapping(),
+            1 => self.mutate_change_weight(),
+            2 => self.mutate_add_mapping(),
+            3 => if !self.mutate_add_dimension() {
+                self.mutate();
+            },
+            4 => self.mutate_add_conversion(),
+            _ => (),
+        }
+    }
+    // Returns a vector of the number of dimensions at each stage of the pipeline
+    pub fn get_space_dims(&self) -> Vec<usize> {
+        let mut result: Vec<usize> = Vec::new();
+        for i in self.conversions.iter() {
+            result.push(i.input.bounds.len());
+        }
+        result.push(self.conversions[self.conversions.len() - 1].output.bounds.len());
+        result
+    }
+    // Returns a vector of the number of mappings in each conversion
+    pub fn get_mapping_counts(&self) -> Vec<usize> {
+        let mut result: Vec<usize> = Vec::new();
+        for i in self.conversions.iter() {
+            result.push(i.mappings.len());
+        }
+        result.push(self.conversions[self.conversions.len() - 1].mappings.len());
+        result
     }
 }
 
