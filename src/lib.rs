@@ -127,7 +127,7 @@ pub struct Conversion {
 }
 
 impl Conversion {
-    /// Creates a new conversion from input and output spaces. The conversion is initialized with a single averaged mapping.
+    /// Creates a new conversion from input and output spaces. The conversion is initialized with a single averaged mapping
     pub fn from_io(input_space: &Vec<(f64,f64)>, output_space: &Vec<(f64,f64)>) -> Conversion {
         let conv = Conversion {
             input_space: input_space.clone(),
@@ -153,14 +153,14 @@ impl Conversion {
 
         self.mappings.push(m);
     }
-    /// Evaluates an input's vector and returns the optional output based on the conversion's mappings and its intermap function.
-    pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
-        // find the maximum distance
+    /// Evaluates an input's vector and returns the optional output based on the conversion's mappings and its intermap function
+    pub fn convert(&self, in_value: Vec<f64>) -> Vec<f64> {
+        // Find the maximum distance
         let mut max_dist = 0.0;
         for i in self.mappings.iter() {
             let dist = dist64(&in_value, &i.input).unwrap();
             if dist == 0.0 {
-                return Some(i.output.clone());
+                return i.output.clone();
             }
             if dist > max_dist {
                 max_dist = dist;
@@ -176,7 +176,7 @@ impl Conversion {
             bottom_sum += coef;
         }
         let result = vector_multiply(&top_sum, &(1.0/bottom_sum));
-        Some(result)
+        result
     }
 }
 
@@ -198,12 +198,10 @@ impl Pipeline {
         pipe
     }
     /// Runs an input vector through every conversion and returns the final output
-    pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
-        let mut data = Some(in_value);
+    pub fn convert(&self, in_value: Vec<f64>) -> Vec<f64> {
+        let mut data = in_value;
         for i in self.conversions.iter() {
-            if let Some(d) = data {
-                data = i.convert(d);
-            }
+                data = i.convert(data);
         }
         data
     }
