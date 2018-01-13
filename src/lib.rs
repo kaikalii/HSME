@@ -62,25 +62,55 @@ pub struct Mapping {
 }
 
 impl Mapping {
-    /// Create a new empty mapping with half weight
-    pub fn new() -> Mapping {
-        let map = Mapping {
-            input: Vec::new(),
-            output: Vec::new(),
+    /// Creates a new mapping that connects the centers of two spaces
+    pub fn avg_from_spaces(input_space: &Vec<(f64,f64)>, output_space: &Vec<(f64,f64)>) -> Mapping {
+        let mut inpoint: Vec<f64> = Vec::new();
+        let mut outpoint: Vec<f64> = Vec::new();
+
+        for i in input_space.iter() {
+            inpoint.push((i.0 + i.1)/2.0);
+        }
+        for i in output_space.iter() {
+            outpoint.push((i.0 + i.1)/2.0);
+        }
+
+        let new_mapping = Mapping {
+            input: inpoint,
+            output: outpoint,
             weight: 0.5,
         };
-        map
+        new_mapping
+    }
+    /// Creates a new mapping that connects the centers of two spaces
+    pub fn random_from_spaces(input_space: &Vec<(f64,f64)>, output_space: &Vec<(f64,f64)>) -> Mapping {
+        let mut inpoint: Vec<f64> = Vec::new();
+        let mut outpoint: Vec<f64> = Vec::new();
+        let mut rng = rand::thread_rng();
+
+        for &(min, max) in input_space.iter() {
+            let range = max - min;
+            inpoint.push(rng.gen_range(0.0, range) + min);
+        }
+
+        for &(min, max) in output_space.iter() {
+            let range = max - min;
+            outpoint.push(rng.gen_range(0.0, range) + min);
+        }
+        let new_mapping = Mapping {
+            input: inpoint,
+            output: outpoint,
+            weight: rng.gen_range(0.0, 1.0),
+        };
+        new_mapping
     }
     /// Initializes a mapping's input and output points
-    pub fn with_points(mut self, input: Vec<f64>, output: Vec<f64>) -> Mapping {
-        self.input = input;
-        self.output = output;
-        self
-    }
-    /// Initializes a mapping's weight
-    pub fn with_weight(mut self, weight: f64) -> Mapping {
-        self.weight = weight;
-        self
+    fn from_points(input: &Vec<f64>, output: &Vec<f64>) -> Mapping {
+        let new_mapping = Mapping {
+            input: input.clone(),
+            output: output.clone(),
+            weight: 0.5,
+        };
+        new_mapping
     }
 }
 
@@ -98,23 +128,13 @@ pub struct Conversion {
 
 impl Conversion {
     /// Creates a new conversion from input and output spaces. The conversion is initialized with a single averaged mapping.
-    pub fn from_io(input_space: Vec<(f64,f64)>, output_space: Vec<(f64,f64)>) -> Conversion {
-        let mut conv = Conversion {
-            input_space,
-            output_space,
-            mappings: Vec::new(),
+    pub fn from_io(input_space: &Vec<(f64,f64)>, output_space: &Vec<(f64,f64)>) -> Conversion {
+        let conv = Conversion {
+            input_space: input_space.clone(),
+            output_space: output_space.clone(),
+            mappings: vec![Mapping::avg_from_spaces(&input_space, &output_space)],
             power: 2.0,
         };
-        let mut inpoint: Vec<f64> = Vec::new();
-        for i in conv.input_space.iter() {
-            inpoint.push((i.0 + i.1)/2.0);
-        }
-        let mut outpoint: Vec<f64> = Vec::new();
-        for i in conv.output_space.iter() {
-            outpoint.push((i.0 + i.1)/2.0);
-        }
-        let avg_mapping = Mapping::new().with_points(inpoint, outpoint);
-        conv.mappings.push(avg_mapping);
         conv
     }
     /// Initializes the conversion's power factor
@@ -122,15 +142,8 @@ impl Conversion {
         self.power = power;
         self
     }
-    /// Initializes the conversion without the default single mapping
-    pub fn without_default_mapping(mut self) -> Conversion {
-        if self.mappings.len() == 1 {
-            self.mappings.pop();
-        }
-        self
-    }
     /// Adds a user-defined mapping to the conevrsion
-    pub fn add_mapping(&mut self, m: Mapping) {
+    fn add_mapping(&mut self, m: Mapping) {
         if m.input.len() != self.input_space.len() {
             panic!("The mapping's input size is not equal to the conversion's input size!");
         }
@@ -139,24 +152,6 @@ impl Conversion {
         }
 
         self.mappings.push(m);
-    }
-    /// Adds a random mapping to the conversion. This mapping will have points that fall within the conversion's space's bounds.
-    pub fn add_random_mapping(&mut self) {
-        let mut inpoint: Vec<f64> = Vec::new();
-        let mut outpoint: Vec<f64> = Vec::new();
-        let mut rng = rand::thread_rng();
-
-        for &(min, max) in self.input_space.iter() {
-            let range = max - min;
-            inpoint.push(rng.gen_range(0.0, range) + min);
-        }
-
-        for &(min, max) in self.output_space.iter() {
-            let range = max - min;
-            outpoint.push(rng.gen_range(0.0, range) + min);
-        }
-
-        self.mappings.push(Mapping::new().with_points(inpoint, outpoint));
     }
     /// Evaluates an input's vector and returns the optional output based on the conversion's mappings and its intermap function.
     pub fn convert(&self, in_value: Vec<f64>) -> Option<Vec<f64> > {
@@ -196,7 +191,7 @@ pub struct Pipeline {
 
 impl Pipeline {
     /// Contructs a Pipeline with a single Conversion which has only one mapping
-    pub fn from_io(input_space: Vec<(f64,f64)>, output_space: Vec<(f64,f64)>) -> Pipeline {
+    pub fn from_io(input_space: &Vec<(f64,f64)>, output_space: &Vec<(f64,f64)>) -> Pipeline {
         let pipe = Pipeline {
             conversions: vec![Conversion::from_io(input_space, output_space)],
         };
@@ -216,7 +211,9 @@ impl Pipeline {
     fn mutate_add_mapping(&mut self) {
         let mut rng = rand::thread_rng();
         let conv_index = rng.gen::<usize>() % self.conversions.len();
-        self.conversions[conv_index].add_random_mapping();
+        let input_space = self.conversions[conv_index].input_space.clone();
+        let output_space = self.conversions[conv_index].output_space.clone();
+        self.conversions[conv_index].add_mapping(Mapping::random_from_spaces(&input_space, &output_space));
     }
     /// Mutates by changing either the input or output of a random mapping in a random conversion
     fn mutate_change_mapping(&mut self) {
@@ -259,10 +256,10 @@ impl Pipeline {
         }
         let new_start_space = ending_bounds.clone();
         let new_end_space = ending_bounds;
-        let mut conv = Conversion::from_io(new_start_space, new_end_space);
+        let mut conv = Conversion::from_io(&new_start_space, &new_end_space);
         if let Some(last) = self.conversions.last() {
             for m in last.mappings.iter() {
-                conv.add_mapping(Mapping::new().with_points(m.output.clone(), m.output.clone()));
+                conv.add_mapping(Mapping::from_points(&m.output, &m.output));
             }
         }
         self.conversions.push(conv);
@@ -369,8 +366,8 @@ mod tests {
     #[test]
     fn test() {
         let mut pipe = Pipeline::from_io(
-            vec![(0.0,10.0);2],
-            vec![(0.0,100.0)],
+            &vec![(0.0,10.0);2],
+            &vec![(0.0,100.0)],
         );
         println!("{:#?}", pipe);
         println!("Maps: {:?}", pipe.get_mapping_counts());
