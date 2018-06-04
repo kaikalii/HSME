@@ -63,10 +63,10 @@ pub struct Mapping {
 
 impl Mapping {
     /// Initializes a mapping's input and output points
-    pub fn from_points(input: &Vec<f64>, output: &Vec<f64>) -> Mapping {
+    pub fn from_points(input: Vec<f64>, output: Vec<f64>) -> Mapping {
         let new_mapping = Mapping {
-            input: input.clone(),
-            output: output.clone(),
+            input: input,
+            output: output,
             weight: 0.5,
         };
         new_mapping
@@ -88,12 +88,12 @@ pub struct Conversion {
 impl Conversion {
     /// Creates a new conversion from input and output spaces
     pub fn from_io_spaces(
-        input_space: &Vec<(f64, f64)>,
-        output_space: &Vec<(f64, f64)>,
+        input_space: Vec<(f64, f64)>,
+        output_space: Vec<(f64, f64)>,
     ) -> Conversion {
         let conv = Conversion {
-            input_space: input_space.clone(),
-            output_space: output_space.clone(),
+            input_space,
+            output_space,
             mappings: Vec::new(),
             power: 2.0,
         };
