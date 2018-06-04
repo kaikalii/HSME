@@ -5,4 +5,3 @@ authors = ["Kai Schmidt <kaikaliischmidt@gmail.com>"]
 
 [dependencies]
 rand = "*"
-getset = "*"
