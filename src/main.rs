@@ -208,7 +208,7 @@ flags:
             println!("{} successes, {} failures", successes, failures);
             println!(
                 "{}% accuracy",
-                successes as f32 / (successes + failures) as f32
+                successes as f32 / (successes + failures) as f32 * 100.0
             );
         } else {
             println!(
