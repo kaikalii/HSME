@@ -89,7 +89,7 @@ impl Conversion {
         self.power = power;
         self
     }
-    /// Adds a user-defined mapping to the conevrsion
+    /// Adds a user-defined mapping to the conversion
     pub fn add_mapping(&mut self, m: Mapping) {
         if m.input.len() != self.input_space.len() {
             panic!("The mapping's input size is not equal to the conversion's input size!");
