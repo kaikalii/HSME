@@ -2,37 +2,20 @@ extern crate rand;
 #[macro_use]
 extern crate serde_derive;
 
-use std::error::Error;
-use std::fmt;
-
-// Utility
-
-#[derive(Debug, Clone)]
-struct VectorDimMismatchError;
-impl Error for VectorDimMismatchError {
-    fn description(&self) -> &str {
-        "Attempted to perform an operation using two vectors with different orders."
-    }
-}
-impl fmt::Display for VectorDimMismatchError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Attempted to perform an operation using two vectors with different orders."
-        )
-    }
-}
-
 /// Adds two vectors and returns their sum
-fn vector_add(a: &Vec<f64>, b: &Vec<f64>) -> Result<Vec<f64>, VectorDimMismatchError> {
+fn vector_add(a: &Vec<f64>, b: &Vec<f64>) -> Vec<f64> {
     if a.len() != b.len() {
-        return Err(VectorDimMismatchError);
+        panic!(
+            "vector_add() a has len {} and b has len {}",
+            a.len(),
+            b.len()
+        );
     }
     let mut result: Vec<f64> = Vec::new();
     for (i, &n) in a.iter().enumerate() {
         result.push(n + b[i]);
     }
-    Ok(result)
+    result
 }
 
 /// Multiplies each element in a vector by a constant and returns the product vector
@@ -41,15 +24,15 @@ fn vector_multiply(v: &Vec<f64>, c: &f64) -> Vec<f64> {
 }
 
 /// Returns the euclidean distance between two Vec<64>s
-fn dist64(a: &Vec<f64>, b: &Vec<f64>) -> Result<f64, VectorDimMismatchError> {
+fn dist64(a: &Vec<f64>, b: &Vec<f64>) -> f64 {
     if a.len() != b.len() {
-        return Err(VectorDimMismatchError);
+        panic!("distf64() a has len {} and b has len {}", a.len(), b.len());
     }
     let mut sum = 0.0;
     for (i, &n) in a.iter().enumerate() {
         sum += (n - b[i]).powf(2.0);
     }
-    Ok(sum.powf(0.5))
+    sum.powf(0.5)
 }
 
 // Mapping
@@ -122,7 +105,7 @@ impl Conversion {
         // Find the maximum distance
         let mut max_dist = 0.0;
         for i in self.mappings.iter() {
-            let dist = dist64(&in_value, &i.input).unwrap();
+            let dist = dist64(&in_value, &i.input);
             if dist == 0.0 {
                 return i.output.clone();
             }
@@ -134,9 +117,9 @@ impl Conversion {
         let mut top_sum = vec![0.0; self.output_space.len()];
         let mut bottom_sum = 0.0;
         for i in self.mappings.iter() {
-            let dist = dist64(&in_value, &i.input).unwrap();
+            let dist = dist64(&in_value, &i.input);
             let coef = ((max_dist - dist) * i.weight).powf(self.power);
-            top_sum = vector_add(&top_sum, &vector_multiply(&i.output, &coef)).unwrap();
+            top_sum = vector_add(&top_sum, &vector_multiply(&i.output, &coef));
             bottom_sum += coef;
         }
         vector_multiply(&top_sum, &(1.0 / bottom_sum))

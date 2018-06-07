@@ -1,7 +1,7 @@
 extern crate hsm;
 extern crate rand;
 extern crate serde;
-extern crate serde_yaml;
+extern crate serde_json;
 
 use std::{collections::HashSet, env, fs::File, io::Read, path::PathBuf};
 
@@ -23,15 +23,24 @@ fn main() {
     let mut eval = false;
     let mut ratio = 0.2;
     let mut nosave = false;
+    let mut power = 2.0;
+    let mut discrete_output = false;
     while let Some(arg) = args.next() {
         match arg.as_ref() {
             "-b" | "--build" => build = true,
             "-t" | "--test" => test = true,
             "-e" | "--eval" => eval = true,
+            "-d" | "--discrete" => discrete_output = true,
             "-r" | "--ratio" => {
                 ratio = args.next()
                     .map(|x| x.parse::<f64>().expect("Invalid test ratio"))
                     .unwrap_or(0.2)
+            }
+
+            "-p" | "--power" => {
+                power = args.next()
+                    .map(|x| x.parse::<f64>().expect("Invalid hsm power"))
+                    .unwrap_or(2.0)
             }
             "--nosave" => nosave = true,
             "-h" | "--help" => {
@@ -45,7 +54,9 @@ flags:
     -t | --test         Tests the tree on a subset of the data
     -e | --eval         Evaluate news data
     -r | --ratio        Sets the ratio of training data to total data
-    --nosave            Prevents the tree from saving to a file
+    -p | --power        Serts the hyperspace map power
+    -d | --discrete     Set the output value as discrete
+    --nosave            Prevents the map from saving to a file
     -h | --help         Prints this message
                 "
                 );
@@ -133,24 +144,32 @@ flags:
         println!("Building...");
 
         // Create the conversion
-        conv = Some(Conversion::from_io_spaces(
-            mins.0.into_iter().zip(maxs.0.into_iter()).collect(),
-            vec![(mins.1, maxs.1)],
-        ));
+        conv = Some(
+            Conversion::from_io_spaces(
+                mins.0.into_iter().zip(maxs.0.into_iter()).collect(),
+                vec![(mins.1, maxs.1)],
+            ).with_power(power),
+        );
+
+        for (inputs, output) in training_data {
+            conv.as_mut()
+                .unwrap()
+                .add_mapping(Mapping::from_points(inputs, vec![output]));
+        }
 
         println!("Hyperspace map construction complete");
 
         // Save the hsm
         if !nosave {
             let out_file = File::create(json_file.clone()).expect("Unable to create output file");
-            serde_yaml::to_writer(out_file, &conv).expect("Unable to serialize hsm");
+            serde_json::to_writer_pretty(out_file, &conv).expect("Unable to serialize hsm");
             println!("Hyperspace map saved to file");
         }
     }
     // Build the hsm from the hsm file if it was not built
     if conv.is_none() {
         conv = Some(
-            serde_yaml::from_reader(
+            serde_json::from_reader(
                 File::open(json_file.clone()).expect("unable to open hsm file"),
             ).expect("Unable to deserialize hsm file"),
         );
@@ -158,17 +177,48 @@ flags:
     // Testing a hyperspace map
     if test {
         // Test the test data
+        let mut successes = 0;
+        let mut failures = 0;
         let avg_error = test_data.iter().fold(0.0, |sum, entry| {
             sum + (conv.as_ref()
                 .unwrap()
-                .convert(entry.0)
+                .convert(entry.0.clone())
                 .first()
                 .expect("convert returned empty vector") - entry.1)
                 .abs()
-        });
+        }) / test_data.len() as f64;
+
+        for entry in &test_data {
+            if conv.as_ref()
+                .unwrap()
+                .convert(entry.0.clone())
+                .first()
+                .expect("convert returned empty vector")
+                .floor() == entry.1.floor()
+            {
+                successes += 1;
+            } else {
+                failures += 1;
+            }
+        }
 
         // Report results
-        println!("implement test data result reporting");
+        println!("..............................");
+        if discrete_output {
+            println!("{} successes, {} failures", successes, failures);
+            println!(
+                "{}% accuracy",
+                successes as f32 / (successes + failures) as f32
+            );
+        } else {
+            println!(
+                "Test data conversion has an average error of {:.4} in a range of {} ({} - {})",
+                avg_error,
+                maxs.1 - mins.1,
+                mins.1,
+                maxs.1
+            );
+        }
         println!("..............................");
     }
     // Evaluate new data
@@ -199,7 +249,8 @@ flags:
         // Evaluate the data
         println!("Evaluation:");
         for entry in eval_data {
-            println!("{:?}: {:?}", entry, conv.as_ref().unwrap().convert(entry));
+            let result = conv.as_ref().unwrap().convert(entry.clone());
+            println!("{:?} : {:?}", entry, result);
         }
         println!("..............................");
     }
