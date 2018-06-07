@@ -1,4 +1,6 @@
 extern crate rand;
+#[macro_use]
+extern crate serde_derive;
 
 use std::error::Error;
 use std::fmt;
@@ -54,7 +56,7 @@ fn dist64(a: &Vec<f64>, b: &Vec<f64>) -> Result<f64, VectorDimMismatchError> {
 
 /// A struct for defining a mapping of a point in space A to a point in space B. Spaces A and B may or may not have the same number of dimensions. The mapping has a weight that is used for conversion calculations
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Mapping {
     input: Vec<f64>,
     output: Vec<f64>,
@@ -77,7 +79,7 @@ impl Mapping {
 
 /// A struct that defines a conversion between two spaces. It is essentially a collection of mappings, all of whom's inputs and outputs fall within the bounds of the conversion's spaces. The conversion can evaluate arbitrary inputs for its output based on the conversion's mappings and its intermap function.
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Conversion {
     input_space: Vec<(f64, f64)>,
     output_space: Vec<(f64, f64)>,

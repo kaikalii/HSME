@@ -13,3 +13,6 @@ path = "src/main.rs"
 
 [dependencies]
 rand = "*"
+serde = "*"
+serde_derive = "*"
+serde_yaml = "*"
